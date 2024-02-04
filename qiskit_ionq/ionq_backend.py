@@ -137,6 +137,7 @@ class IonQBackend(Backend):
         return Options(
             shots=1024,
             job_settings=None,
+            runtime_options_json=None,
             error_mitigation=None,
             extra_query_params={},
             extra_metadata={},

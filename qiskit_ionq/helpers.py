@@ -380,6 +380,7 @@ def qiskit_to_ionq(
             DeprecationWarning,
             stacklevel=2,
         )
+
     ionq_json = {
         "target": target,
         "shots": passed_args.get("shots"),
@@ -398,20 +399,42 @@ def qiskit_to_ionq(
             "qiskit_header": qiskit_header,
         },
     }
+
+    # append any job special purpose qpu runtime options processing
+    runtime_options_json = passed_args.pop("runtime_options_json", None)
+    if runtime_options_json is not None:
+        # runtime_data is allowed only with native gate circuits
+        if backend.gateset().lower() != "native":
+            raise RuntimeError('runtime_options_json can only be specified with qpu backend gateset="native"')
+
+        # verify that runtime_options_json is valid json and insert into
+        # the 'as_json' job payload
+        try:
+            runtime_options_dict = json.loads(runtime_options_json) # load also verifies it
+            ionq_json["input"]["runtime_options"] = runtime_options_dict["runtime_options"]
+        except json.decoder.JSONDecodeError:
+            raise RuntimeError("runtime_options_json is not valid json!")
+        else:
+            warnings.warn("⇶ runtime_options_json specified and will be included in job payload")
+
     if target == "simulator":
         ionq_json["noise"] = {
             "model": passed_args.get("noise_model") or backend.options.noise_model,
             "seed": backend.options.sampler_seed,
         }
+
     ionq_json.update(extra_query_params)
     # merge circuit and extra metadata
     ionq_json["metadata"].update(extra_metadata)
+
     settings = passed_args.get("job_settings") or None
     if settings is not None:
         ionq_json["settings"] = settings
+
     error_mitigation = passed_args.get("error_mitigation")
     if error_mitigation and isinstance(error_mitigation, ErrorMitigation):
         ionq_json["error_mitigation"] = error_mitigation.value
+
     return json.dumps(ionq_json, cls=SafeEncoder)
 
 
