@@ -119,6 +119,7 @@ ionq_native_basis_gates = [
     "gpi2",
     "ms",  # Pairwise MS gate
     "zz",  # ZZ gate
+    "nop"  # NOP gate, analogous to qiskit Delay
 ]
 
 # Each language corresponds to a different set of basis gates.
@@ -174,6 +175,16 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
         # Raise out for instructions we don't support.
         if instruction_name not in GATESET_MAP[gateset]:
             raise exceptions.IonQGateError(instruction_name, gateset)
+
+        # Process native nop gate
+        if instruction_name == "nop":
+            if len(instruction.params) > 0:
+                time = instruction.params[0]
+            else:
+                time = 0
+
+            output_circuit.append({"gate":"nop", "time": float(time)})
+            continue
 
         # Process the instruction and convert.
         rotation = {}

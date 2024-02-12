@@ -184,3 +184,28 @@ class ZZGate(Gate):
             ],
             dtype=dtype,
         )
+
+
+class NOPGate(Gate):
+    r"""
+    **nop Gate:**
+        - the native nop gate is analogous to Delay in Qiskit
+        - time is microseconds as a floating point value
+        - it is used from Qiskit like:
+            from qiskit_ionq import GPIGate, GPI2Gate, MSGate, NOPGate
+            circuit.append(NOPGate(1.2))
+        - the qiskit code is translated to the lower level IonQ native gate as:
+            { "gate": "nop", "time": 1.2 },
+    """
+
+    def __init__(
+        self,
+        time: ParameterValueType,
+        label: Optional[str] = None):
+        """Create new nop gate."""
+        super().__init__(
+            "nop",
+            0,
+            [time],
+            label=label,
+        )
