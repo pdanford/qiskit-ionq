@@ -40,7 +40,9 @@ class MockBackend(ionq_backend.IonQBackend):
     def gateset(self):
         return "qis"
 
-    def __init__(self, provider, name="ionq_mock_backend"):  # pylint: disable=redefined-outer-name
+    def __init__(
+        self, provider, name="ionq_mock_backend"
+    ):  # pylint: disable=redefined-outer-name
         config = q_models.BackendConfiguration.from_dict(
             {
                 "backend_name": name,
@@ -71,7 +73,9 @@ class MockBackend(ionq_backend.IonQBackend):
         return MockBackend(self._provider, name, **kwargs)
 
 
-def dummy_job_response(job_id, target="mock_backend", status="completed", job_settings=None):
+def dummy_job_response(
+    job_id, target="mock_backend", status="completed", job_settings=None
+):
     """A dummy response payload for `job_id`.
 
     Args:
@@ -233,6 +237,20 @@ def qpu_backend(provider):
 
 # pylint: disable=redefined-outer-name
 @pytest.fixture()
+def native_qpu_backend(provider):
+    """Get the native gateset QPU backend from a provider.
+
+    Args:
+        provider (IonQProvider): Injected provider from :meth:`provider`.
+
+    Returns:
+        IonQQPUBackend: An instance of an IonQQPUBackend with the native gateset.
+    """
+    return provider.get_backend("ionq_qpu", gateset="native")
+
+
+# pylint: disable=redefined-outer-name
+@pytest.fixture()
 def simulator_backend(provider):
     """Get the QPU backend from a provider.
 
@@ -273,11 +291,11 @@ def formatted_result(provider):
     # mock a job response
     with _default_requests_mock() as requests_mock:
         # Mock the response with our dummy job response.
-        requests_mock.get(path,
-                          json=dummy_job_response(job_id, "qpu.aria-1", "completed", settings))
+        requests_mock.get(
+            path, json=dummy_job_response(job_id, "qpu.aria-1", "completed", settings)
+        )
 
-        requests_mock.get(results_path,
-                          json={"0": 0.5, "2": 0.499999})
+        requests_mock.get(results_path, json={"0": 0.5, "2": 0.499999})
 
         # Create the job (this calls self.status(), which will fetch the job).
         job = ionq_job.IonQJob(backend, job_id, client)

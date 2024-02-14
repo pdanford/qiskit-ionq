@@ -368,3 +368,53 @@ def test__error_mitigation_settings(simulator_backend, error_mitigation, expecte
     actual_error_mitigation = actual.pop("error_mitigation")
 
     assert actual_error_mitigation == expected
+
+
+def test_run_circuit_conversion_with_custom_runtime_options(native_qpu_backend):
+    """Test conversion of a quantum circuit with custom runtime options into IonQ format.
+
+    Args:
+        native_qpu_backend (SimulatorBackend): A native hardware backend fixture for IonQ.
+    """
+    # Initialize a quantum circuit
+    circuit = QuantumCircuit(2, 2)
+
+    # Add gates
+    circuit.append(MSGate(0, 0), [0, 1])
+    circuit.append(GPIGate(0), [0])
+    circuit.append(GPI2Gate(1), [1])
+    circuit.measure([0, 1], [0, 1])
+
+    # Define custom runtime options
+    # Define custom runtime options
+    runtime_options = {
+        "custom_pulse_shapes": {
+            "schema": "am-v4",
+            "iteration": 0,
+            "seed_source": "c2-am-v4-2023-07-18-lsrd-iq",
+            "(0,1)": {
+                "tag": "0+1:0",
+                "durationUsec": 729.6,
+                "scale": 0.6895113158792494,
+                "amplitudes": [0.03593138382089995, 0.058692626385449094],
+            },
+        }
+    }
+
+    # Convert the circuit to IonQ JSON format with custom runtime options
+    ionq_json = qiskit_to_ionq(
+        circuit,
+        native_qpu_backend,
+        passed_args={"shots": 100, "runtime_options": runtime_options},
+    )
+
+    # Parse the converted IonQ JSON
+    actual = json.loads(ionq_json)
+
+    # Assertions to validate the conversion (Modify these based on expected outcomes)
+    assert (
+        "runtime_options" in actual["input"]
+    ), "The converted JSON should contain 'runtime_options'."
+    assert (
+        actual["input"]["runtime_options"]["custom_pulse_shapes"]["schema"] == "am-v4"
+    ), "Schema should match 'am-v4'."
