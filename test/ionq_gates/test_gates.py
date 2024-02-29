@@ -24,7 +24,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the IonQ's GPIGate, GPI2Gate, MSGate, ZZGate."""
+"""Tests for the IonQ's GPIGate, GPI2Gate, MSGate, ZZGate, NOPGate."""
 # pylint: disable=redefined-outer-name
 
 import math
@@ -33,7 +33,7 @@ import numpy
 import pytest
 
 from qiskit.circuit.library import XGate, YGate, RXGate, RYGate
-from qiskit_ionq import GPIGate, GPI2Gate, MSGate, ZZGate
+from qiskit_ionq import GPIGate, GPI2Gate, MSGate, ZZGate, NOPGate
 
 
 @pytest.mark.parametrize("gate,phase", [(XGate(), 0), (YGate(), 0.25)])
