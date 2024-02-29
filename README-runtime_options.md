@@ -1,7 +1,12 @@
-Specifying runtime_options with an Ionq native gate circuit
+Specifying runtime_options with IonQ jobs
 ================================================================================
 
-This is an example python script that shows how to attach runtime options to a program composed of IonQ native gates.
+Note that the `runtime_options` parameter is currently (2024-02) only supported in IonQ native gate circuits.
+
+### Qiskit
+
+
+This is an example Qiskit python script that shows how to attach runtime options to a circuit composed of IonQ native gates:
 
 ```
 #!/usr/bin/env python
@@ -12,11 +17,10 @@ This is an example python script that shows how to attach runtime options to a p
 #   source _env_qiskit/bin/activate
 #   pip install -r requirements.txt
 #   pip install qiskit
-#   # pip install qiskit[visualization]
-#   pip install -e . # to get the qiskit-ionq package
+#   pip install -e . # to get this qiskit-ionq package
 
 
-API_KEY="<YOUR_SECRET_KEY>"
+SECRET_API_KEY="<YOUR_SECRET_KEY>"
 
 
 # Note: Imports are done in the below example functions
@@ -53,7 +57,7 @@ def qc_example_native_gates():
 
 
 from qiskit_ionq import IonQProvider
-provider = IonQProvider(API_KEY)
+provider = IonQProvider(SECRET_API_KEY)
 
 # >> Run the native circuit on IonQ's qpu hardware <<
 qpu = provider.get_backend("ionq_qpu.system-1", gateset="native")testing
@@ -93,3 +97,79 @@ print(job.get_counts())
 print(job.get_probabilities())
 ```
 
+### curl
+
+This shows how to attach runtime options to a job submission via `curl` to a circuit composed of IonQ native gates:
+
+```
+JOB_ID=$(
+curl -X POST "${CLOUD_URL}/v0.3/jobs/"                  \
+     --header "Content-Type: application/json"          \
+     --header "Authorization: apiKey ${SECRET_API_KEY}" \
+     -d '{
+             "target": "ionq_qpu.system-1",
+             "input":
+             {
+                 "format": "ionq.circuit.v0",
+                 "qubits": 11,
+                 "gateset": "native",
+                 "circuit":
+                 [
+                     {
+                         "gate": "ms",
+                         "targets":
+                         [
+                             0,
+                             1
+                         ],
+                         "phases":
+                         [
+                             0,
+                             0
+                         ]
+                     },
+                     {
+                         "gate": "nop",
+                         "time": 1
+                     },
+                     {
+                         "gate": "gpi",
+                         "target": 2,
+                         "phase": 0.25
+                     }
+                 ],
+                 "runtime_options":
+                 {
+                     "custom_pulse_shapes":
+                     {
+                         "schema": "am-v4",
+                         "iteration": 0,
+                         "seed_source": "c2-am-v4-2023-07-18-lsrd-iq",
+                         "(0,1)":
+                         {
+                             "tag": "0+1:0",
+                             "durationUsec": 729.6,
+                             "scale": 0.6895113158792494,
+                             "amplitudes":
+                             [
+                                 0.03593138382089995,
+                                 0.058692626385449094
+                             ]
+                         }
+                     }
+                 }
+             }
+         }' \
+| tee | jq -r '.id') ; echo ${JOB_ID}
+```
+
+###### For a "large" program:
+
+```
+JOB_ID=$(
+curl -X POST "${CLOUD_URL}/v0.3/jobs/"                  \
+     --header "Content-Type: application/json"          \
+     --header "Authorization: apiKey ${SECRET_API_KEY}" \
+     --data "@cloud.ore"                                \
+| tee | jq -r '.id') ; echo ${JOB_ID}
+```
