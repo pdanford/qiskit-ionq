@@ -13,11 +13,17 @@ This is an example Qiskit python script that shows how to attach runtime options
 
 
 # Setup:
+#   cd qiskit-ionq
 #   python -m venv _env_qiskit
 #   source _env_qiskit/bin/activate
 #   pip install -r requirements.txt
-#   pip install qiskit
+#   pip install 'qiskit < 1.0.0'
 #   pip install -e . # to get this qiskit-ionq package
+#
+# Running:
+#   cd qiskit-ionq
+#   source _env_qiskit/bin/activate
+#   ./this_python_script.py
 
 
 SECRET_API_KEY="<YOUR_SECRET_KEY>"
@@ -44,13 +50,14 @@ def qc_example_native_gates():
     """
     from qiskit import QuantumCircuit
     # import ionq native gates
-    from qiskit_ionq import GPIGate, GPI2Gate, MSGate
+    from qiskit_ionq import GPIGate, GPI2Gate, MSGate, NOPGate
 
     # initialize a quantum circuit
     circuit = QuantumCircuit(2, 2)
     # add gates
     circuit.append(MSGate(0, 0), [0, 1])
     circuit.append(GPIGate(0), [0])
+    circuit.append(NOPGate(1.2))
     circuit.append(GPI2Gate(1), [1])
     circuit.measure([0, 1], [0, 1])
     return circuit
@@ -60,7 +67,7 @@ from qiskit_ionq import IonQProvider
 provider = IonQProvider(SECRET_API_KEY)
 
 # >> Run the native circuit on IonQ's qpu hardware <<
-qpu = provider.get_backend("ionq_qpu.system-1", gateset="native")testing
+qpu = provider.get_backend("ionq_qpu.system-1", gateset="native")
 
 # >> Minimal example of attaching runtime_options
 #    Note: in real world use, runtime_options_json would typically be loaded from a file due to size.
@@ -87,14 +94,13 @@ runtime_options_json = """
                                     }
                                 }
                             }
-                            """
+                       """
 
 job = qpu.run(qc_example_native_gates(), shots=100, runtime_options_json=runtime_options_json)
 
-# print the counts
-print(job.get_counts())
-
-print(job.get_probabilities())
+# print the counts and probabilities
+# print(job.get_counts())
+# print(job.get_probabilities())
 ```
 
 ### curl
