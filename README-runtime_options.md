@@ -11,27 +11,28 @@ This is an example Qiskit python script that shows how to attach runtime options
 ```
 #!/usr/bin/env python
 
-
+# Requires:
+#     python3
+#     requirements.txt
+#
 # Setup:
-#   cd qiskit-ionq
-#   python -m venv _env_qiskit
-#   source _env_qiskit/bin/activate
-#   pip install -r requirements.txt
-#   pip install 'qiskit < 1.0.0'
-#   pip install -e . # to get this qiskit-ionq package
+#     0. cd qiskit-ionq
+#     1. git checkout custom-features
+#     2. python -m venv _env_qiskit && source _env_qiskit/bin/activate
+#     3. pip install -e .   # to install this custom qiskit-ionq package
 #
 # Running:
-#   cd qiskit-ionq
-#   source _env_qiskit/bin/activate
-#   ./this_python_script.py
+#   0. cd qiskit-ionq
+#   1. source _env_qiskit/bin/activate
+#   2. fill in SECRET_API_KEY below
+#   3. ./<this_python_script.py>
 
 
 SECRET_API_KEY="<YOUR_SECRET_KEY>"
 
 
-# Note: Imports are done in the below example functions
-#       to illustrate the dependencies of each (and ease of
-#       copy and paste to external files).
+# Note: Imports are done in the below example functions instead
+#       of here to illustrate the dependencies of each function.
 
 
 def qc_example_load(qpy_filename = "example_circ.qpy"):
@@ -64,39 +65,40 @@ def qc_example_native_gates():
 
 
 from qiskit_ionq import IonQProvider
+
 provider = IonQProvider(SECRET_API_KEY)
 
 # >> Run the native circuit on IonQ's qpu hardware <<
 qpu = provider.get_backend("ionq_qpu.system-1", gateset="native")
 
 # >> Minimal example of attaching runtime_options
-#    Note: in real world use, runtime_options_json would typically be loaded from a file due to size.
-runtime_options_json = """
-                            {
-                            "runtime_options":
+#    Note: in real world use, our_runtime_options_json would typically be loaded from a file due to size.
+our_runtime_options_json =  """
                                 {
-                                    "custom_pulse_shapes":
+                                "runtime_options":
                                     {
-                                        "schema": "am-v4",
-                                        "iteration": 0,
-                                        "seed_source": "c2-am-v4-2023-07-18-lsrd-iq",
-                                        "(0,1)":
+                                        "custom_pulse_shapes":
                                         {
-                                            "tag": "0+1:0",
-                                            "durationUsec": 729.6,
-                                            "scale": 0.6895113158792494,
-                                            "amplitudes":
-                                            [
-                                                0.03593138382089995,
-                                                0.058692626385449094
-                                            ]
+                                            "schema": "am-v4",
+                                            "iteration": 0,
+                                            "seed_source": "c2-am-v4-2023-07-18-lsrd-iq",
+                                            "(0,1)":
+                                            {
+                                                "tag": "0+1:0",
+                                                "durationUsec": 729.6,
+                                                "scale": 0.6895113158792494,
+                                                "amplitudes":
+                                                [
+                                                    0.03593138382089995,
+                                                    0.058692626385449094
+                                                ]
+                                            }
                                         }
                                     }
                                 }
-                            }
-                       """
+                            """
 
-job = qpu.run(qc_example_native_gates(), shots=100, runtime_options_json=runtime_options_json)
+job = qpu.run(qc_example_native_gates(), shots=100, runtime_options_json=our_runtime_options_json)
 
 # print the counts and probabilities
 # print(job.get_counts())

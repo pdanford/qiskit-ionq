@@ -33,6 +33,7 @@ import json
 import gzip
 import base64
 import platform
+import logging
 import warnings
 
 from qiskit import __version__ as qiskit_terra_version
@@ -43,6 +44,8 @@ from qiskit.circuit.library import standard_gates as q_gates
 from importlib_metadata import version
 from qiskit_ionq.constants import ErrorMitigation
 from . import exceptions
+
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 # the qiskit gates that the IonQ backend can serialize to our IR
 # not the actual hardware basis gates for the system — we do our own transpilation pass.
@@ -426,7 +429,8 @@ def qiskit_to_ionq(
     }
 
     # append any job special purpose qpu runtime options processing
-    runtime_options = passed_args.pop("runtime_options", None)
+    runtime_options = passed_args.pop("runtime_options_json", None)
+
     if runtime_options is not None:
         # runtime_data is allowed only with native gate circuits
         if backend.gateset().lower() != "native":
@@ -435,14 +439,19 @@ def qiskit_to_ionq(
             )
 
         # verify that runtime_options_json is valid json and insert into
-        # the 'as_json' job payload
+        # the 'ionq_json' job payload
         try:
-            ionq_json["input"]["runtime_options"] = runtime_options
+            runtime_options_dict = json.loads(runtime_options)
+
+            if "runtime_options" not in runtime_options_dict:
+                raise RuntimeError("-> 'runtime_options' key not found in supplied runtime_options_json argument")
+
+            ionq_json["input"]["runtime_options"] = runtime_options_dict["runtime_options"]
         except json.decoder.JSONDecodeError:
-            raise RuntimeError("runtime_options is not valid json!")
+            raise RuntimeError("-> 'runtime_options' in runtime_options_json argument is not valid json!")
         else:
-            warnings.warn(
-                "⇶ runtime_options specified and will be included in job payload"
+            logging.info(
+                "⇶ 'runtime_options' specified and will be included in job payload"
             )
 
     if multi_circuit:
