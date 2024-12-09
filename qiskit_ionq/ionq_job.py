@@ -35,16 +35,23 @@
    :class:`BaseJob <qiskit.providers.BaseJob>`.
 """
 
+from __future__ import annotations
+
 import warnings
+from typing import TYPE_CHECKING, Any, Union, Optional
 import numpy as np
 
+from qiskit import QuantumCircuit
 from qiskit.providers import JobV1, jobstatus
 from qiskit.providers.exceptions import JobTimeoutError
 from .ionq_result import IonQResult as Result
 from .helpers import decompress_metadata_string
 
-
 from . import constants, exceptions
+
+if TYPE_CHECKING:
+    from . import ionq_backend
+    from . import ionq_client
 
 
 def map_output(data, clbits, num_qubits):
@@ -74,7 +81,7 @@ def map_output(data, clbits, num_qubits):
 
 def _build_counts(
     data, num_qubits, clbits, shots, use_sampler=False, sampler_seed=None
-):
+):  # pylint: disable=too-many-positional-arguments
     """Map IonQ's ``counts`` onto qiskit's ``counts`` model.
 
     .. NOTE:: For simulator jobs, this method builds counts using a randomly
@@ -155,18 +162,21 @@ class IonQJob(JobV1):
 
     def __init__(
         self,
-        backend,
-        job_id,
-        client=None,
-        circuit=None,
-        passed_args=None,
-    ):
+        backend: ionq_backend.IonQBackend,
+        job_id: Optional[str] = None,
+        client: Optional[ionq_client.IonQClient] = None,
+        circuit: Optional[QuantumCircuit] = None,
+        passed_args: Optional[dict] = None,
+    ):  # pylint: disable=too-many-positional-arguments
+        assert (
+            job_id is not None or circuit is not None
+        ), "Job must have a job_id or circuit"
         super().__init__(backend, job_id)
         self._client = client or backend.client
         self._result = None
         self._status = None
         self._execution_time = None
-        self._metadata = {}
+        self._metadata: dict[str, Any] = {}
 
         if passed_args is not None:
             self.extra_query_params = passed_args.pop("extra_query_params", {})
@@ -187,11 +197,12 @@ class IonQJob(JobV1):
             self._job_id = job_id
             self.status()
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel this job."""
+        assert self._job_id is not None, "Cannot cancel a job without a job_id."
         self._client.cancel_job(self._job_id)
 
-    def submit(self):
+    def submit(self) -> None:
         """Submit a job to the IonQ API.
 
         Raises:
@@ -206,7 +217,7 @@ class IonQJob(JobV1):
         response = self._client.submit_job(job=self)
         self._job_id = response["id"]
 
-    def get_counts(self, circuit=None):
+    def get_counts(self, circuit: Optional[QuantumCircuit] = None) -> dict:
         """Return the counts for the job.
 
         .. ATTENTION::
@@ -242,7 +253,12 @@ class IonQJob(JobV1):
         """
         return self.result().get_probabilities()
 
-    def result(self, sharpen: bool = None, extra_query_params: dict = None, **kwargs):
+    def result(
+        self,
+        sharpen: bool | None = None,
+        extra_query_params: dict | None = None,
+        **kwargs,
+    ):
         """Retrieve job result data.
 
         .. NOTE::
@@ -260,6 +276,7 @@ class IonQJob(JobV1):
             IonQJobError: If the job has reached a final state but
                 the job itself was never converted to a
                 :class:`Result <qiskit.result.Result>`.
+            IonQJobStateError: If the job was cancelled before this method fetches it.
 
         Returns:
             Result: A Qiskit :class:`Result <qiskit.result.Result>` representation of this job.
@@ -277,7 +294,14 @@ class IonQJob(JobV1):
                 "Timed out waiting for job to complete."
             ) from ex
 
+        if self._status is jobstatus.JobStatus.CANCELLED:
+            assert self._job_id is not None
+            raise exceptions.IonQJobStateError(
+                f"Cannot retrieve result for canceled job {self._job_id}"
+            )
+
         if self._status is jobstatus.JobStatus.DONE:
+            assert self._job_id is not None
             response = self._client.get_results(
                 job_id=self._job_id,
                 sharpen=sharpen,
@@ -287,7 +311,7 @@ class IonQJob(JobV1):
 
         return self._result
 
-    def status(self, detailed=False):
+    def status(self, detailed: bool = False) -> jobstatus.JobStatus | dict:
         """Retrieve the status of a job
 
         Args:
@@ -317,6 +341,9 @@ class IonQJob(JobV1):
         # Otherwise, look up a status enum from the response.
         response = self._client.retrieve_job(self._job_id)
         api_response_status = response.get("status")
+        status_enum: Union[
+            constants.APIJobStatus, constants.JobStatusMap, jobstatus.JobStatus
+        ]
         try:
             status_enum = constants.APIJobStatus(api_response_status)
         except ValueError as ex:
@@ -348,24 +375,33 @@ class IonQJob(JobV1):
             self._children = response.get("children", [])
             self._num_qubits = response.get("qubits", 0)
             default_map = list(range(self._num_qubits))
-            self._clbits = response.get("registers", {}).get("meas_mapped", default_map)
-            self._execution_time = response.get("execution_time") / 1000
+            self._clbits = (
+                [
+                    self._client.retrieve_job(job_id)
+                    .get("registers", {})
+                    .get("meas_mapped", default_map)
+                    for job_id in self._children
+                ]
+                if self._children
+                else [response.get("registers", {}).get("meas_mapped", default_map)]
+            )
+            self._execution_time = response["execution_time"] / 1000
 
         if self._status == jobstatus.JobStatus.ERROR:
             failure = response.get("failure") or {}
             failure_type = failure.get("code", "")
             failure_message = failure.get("error", "")
             error_message = (
-                f"Unable to retreive result for job {self.job_id()}. "
+                f"Unable to retreive result for job {self._job_id}. "
                 f'Failure from IonQ API "{failure_type}: {failure_message}"'
             )
             raise exceptions.IonQJobFailureError(error_message)
 
         if self._status == jobstatus.JobStatus.CANCELLED:
-            error_message = (
-                f'Unable to retreive result for job {self.job_id()}. Job was cancelled"'
+            warning_message = (
+                f'Unable to retreive result for job {self._job_id}. Job was cancelled"'
             )
-            raise exceptions.IonQJobStateError(error_message)
+            warnings.warn(warning_message)
 
         if "warning" in response and "messages" in response["warning"]:
             for warning in response["warning"]["messages"]:
@@ -494,14 +530,7 @@ class IonQJob(JobV1):
                 (counts, probabilities) = _build_counts(
                     data[i],
                     qiskit_header[i].get("n_qubits", self._num_qubits),
-                    range(
-                        sum(
-                            creg[1]
-                            for creg in qiskit_header[i].get(
-                                "creg_sizes", [["meas", len(self._clbits)]]
-                            )
-                        )
-                    ),
+                    self._clbits[i],
                     shots,
                     use_sampler=is_ideal_simulator,
                     sampler_seed=sampler_seed,

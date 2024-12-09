@@ -29,21 +29,35 @@ Helper methods for mapping Qiskit classes
 to IonQ REST API compatible values.
 """
 
+from __future__ import annotations
+
 import json
 import gzip
 import base64
 import platform
 import logging
 import warnings
+import os
+from typing import Literal, Any
+import functools
+import time
+import random
+import requests
+from dotenv import dotenv_values
 
 from qiskit import __version__ as qiskit_terra_version
-from qiskit.circuit import controlledgate as q_cgates
+from qiskit.circuit import (
+    controlledgate as q_cgates,
+    QuantumCircuit,
+    QuantumRegister,
+    ClassicalRegister,
+)
 from qiskit.circuit.library import standard_gates as q_gates
 
 # Use this to get version instead of __version__ to avoid circular dependency.
 from importlib_metadata import version
 from qiskit_ionq.constants import ErrorMitigation
-from . import exceptions
+from . import exceptions as ionq_exceptions
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -92,6 +106,7 @@ ionq_basis_gates = [
     "x",
     "y",
     "z",
+    "PauliEvolution",
 ]
 
 ionq_api_aliases = {  # todo fix alias bug
@@ -103,6 +118,7 @@ ionq_api_aliases = {  # todo fix alias bug
     "mcx_gray": "cx",  # just one C for all mcx
     "tdg": "ti",
     "p": "z",
+    "PauliEvolution": "pauliexp",
     "rxx": "xx",
     "ryy": "yy",
     "rzz": "zz",
@@ -134,7 +150,11 @@ GATESET_MAP = {
 }
 
 
-def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
+def qiskit_circ_to_ionq_circ(
+    input_circuit: QuantumCircuit,
+    gateset: Literal["qis", "native"] = "qis",
+    ionq_compiler_synthesis: bool = False,
+):
     """Build a circuit in IonQ's instruction format from qiskit instructions.
 
     .. ATTENTION:: This function ignores the following compiler directives:
@@ -145,10 +165,14 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
         gateset (string): Set of gates to target. It can be QIS (required transpilation pass in
           IonQ backend, which is sent standard gates) or native (only IonQ native gates are
           allowed, in the future we may provide transpilation to these gates in Qiskit).
+        ionq_compiler_synthesis (bool): Whether to opt-in to IonQ compiler's intelligent
+          trotterization.
 
     Raises:
         IonQGateError: If an unsupported instruction is supplied.
         IonQMidCircuitMeasurementError: If a mid-circuit measurement is detected.
+        IonQPauliExponentialError: If non-commuting PauliExponentials are found without
+          the appropriate flag.
 
     Returns:
         list[dict]: A list of instructions in a converted dict format.
@@ -179,7 +203,7 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
 
         # Raise out for instructions we don't support.
         if instruction_name not in GATESET_MAP[gateset]:
-            raise exceptions.IonQGateError(instruction_name, gateset)
+            raise ionq_exceptions.IonQGateError(instruction_name, gateset)
 
         # Process native nop gate
         if instruction_name == "nop":
@@ -192,7 +216,7 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
             continue
 
         # Process the instruction and convert.
-        rotation = {}
+        rotation: dict[str, Any] = {}
         if len(instruction.params) > 0:
             if gateset == "qis" or (
                 len(instruction.params) == 1 and instruction_name != "zz"
@@ -203,6 +227,9 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
                         instruction.params[0]
                     )
                 }
+                if instruction_name == "PauliEvolution":
+                    # rename rotation to time
+                    rotation["time"] = rotation.pop("rotation")
             elif instruction_name in {"zz"}:
                 rotation = {"angle": instruction.params[0]}
             else:
@@ -267,6 +294,32 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
                 }
             )
 
+        if instruction_name == "pauliexp":
+            imag_coeff = any(coeff.imag for coeff in instruction.operator.coeffs)
+            assert not imag_coeff, (
+                "PauliEvolution gate must have real coefficients, "
+                f"but got {imag_coeff}"
+            )
+            terms = [term[0] for term in instruction.operator.to_list()]
+            if not ionq_compiler_synthesis and not paulis_commute(terms):
+                raise ionq_exceptions.IonQPauliExponentialError(
+                    f"You have included a PauliEvolutionGate with non-commuting terms: {terms}."
+                    "To decompose it with IonQ hardware-aware synthesis, resubmit with the "
+                    "IONQ_COMPILER_SYNTHESIS flag."
+                )
+            targets = [
+                input_circuit.qubits.index(qargs[i])
+                for i in range(instruction.num_qubits)
+            ]
+            coefficients = [coeff.real for coeff in instruction.operator.coeffs]
+            gate = {
+                "gate": instruction_name,
+                "targets": targets,
+                "terms": terms,
+                "coefficients": coefficients,
+            }
+            converted.update(gate)
+
         # if there's a valid instruction after a measurement,
         if num_meas > 0:
             # see if any of the involved qubits have been measured,
@@ -275,7 +328,7 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
                 "controls", []
             )
             if any(i in meas_map for i in controls_and_targets):
-                raise exceptions.IonQMidCircuitMeasurementError(
+                raise ionq_exceptions.IonQMidCircuitMeasurementError(
                     input_circuit.qubits.index(qargs[0]), instruction_name
                 )
 
@@ -284,7 +337,32 @@ def qiskit_circ_to_ionq_circ(input_circuit, gateset="qis"):
     return output_circuit, num_meas, meas_map
 
 
-def get_register_sizes_and_labels(registers):
+def paulis_commute(pauli_terms: list[str]) -> bool:
+    """Check if a list of Pauli terms commute.
+
+    Args:
+        pauli_terms (list): A list of Pauli terms.
+
+    Returns:
+        bool: Whether the Pauli terms commute.
+    """
+    for i, term in enumerate(pauli_terms):
+        for other_term in pauli_terms[i:]:
+            assert len(term) == len(other_term)
+            anticommutation_parity = 0
+            for index, char in enumerate(term):
+                other_char = other_term[index]
+                if "I" not in (char, other_char):
+                    if char != other_char:
+                        anticommutation_parity += 1
+            if anticommutation_parity % 2 == 1:
+                return False
+    return True
+
+
+def get_register_sizes_and_labels(
+    registers: list[QuantumRegister | ClassicalRegister],
+) -> tuple[list, list]:
     """Returns a tuple of sizes and labels in for a given register
 
     Args:
@@ -310,7 +388,9 @@ def get_register_sizes_and_labels(registers):
     return sizes, labels
 
 
-def compress_to_metadata_string(metadata):  # pylint: disable=invalid-name
+def compress_to_metadata_string(
+    metadata: dict | list,
+) -> str:  # pylint: disable=invalid-name
     """
     Convert a metadata object to a compact string format (dumped, gzipped, base64 encoded)
     for storing in IonQ API metadata
@@ -329,7 +409,9 @@ def compress_to_metadata_string(metadata):  # pylint: disable=invalid-name
     return encoded.decode()
 
 
-def decompress_metadata_string(input_string):  # pylint: disable=invalid-name
+def decompress_metadata_string(
+    input_string: str,
+) -> dict | list:  # pylint: disable=invalid-name
     """
     Convert compact string format (dumped, gzipped, base64 encoded) from
     IonQ API metadata back into a dict or list of dicts relevant to building
@@ -351,7 +433,7 @@ def decompress_metadata_string(input_string):  # pylint: disable=invalid-name
 
 def qiskit_to_ionq(
     circuit, backend, passed_args=None, extra_query_params=None, extra_metadata=None
-):
+) -> str:
     """Convert a Qiskit circuit to a IonQ compatible dict.
 
     Parameters:
@@ -372,12 +454,20 @@ def qiskit_to_ionq(
     if isinstance(circuit, (list, tuple)):
         multi_circuit = True
         for circ in circuit:
-            ionq_circ, _, meas_map = qiskit_circ_to_ionq_circ(circ, backend.gateset())
-            ionq_circs.append((ionq_circ, meas_map))
+            ionq_circ, _, meas_map = qiskit_circ_to_ionq_circ(
+                circ,
+                backend.gateset(),
+                extra_metadata.get("ionq_compiler_synthesis", False),
+            )
+            ionq_circs.append((ionq_circ, meas_map, circ.name))
     else:
-        ionq_circs, _, meas_map = qiskit_circ_to_ionq_circ(circuit, backend.gateset())
+        ionq_circs, _, meas_map = qiskit_circ_to_ionq_circ(
+            circuit,
+            backend.gateset(),
+            extra_metadata.get("ionq_compiler_synthesis", False),
+        )
         circuit = [circuit]
-
+    circuit: list[QuantumCircuit] | tuple[QuantumCircuit, ...]  # type: ignore[no-redef]
     metadata_list = [
         {
             "memory_slots": circ.num_clbits,  # int
@@ -403,18 +493,13 @@ def qiskit_to_ionq(
     )
 
     target = backend.name()[5:] if backend.name().startswith("ionq") else backend.name()
-    if target == "qpu":
-        target = "qpu.harmony"  # todo default to cheapest available option
-        warnings.warn(
-            "The ionq_qpu backend is deprecated. Defaulting to ionq_qpu.harmony.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
+    name = passed_args.get("name") or (
+        f"{len(circuit)} circuits" if multi_circuit else circuit[0].name
+    )
     ionq_json = {
         "target": target,
         "shots": passed_args.get("shots"),
-        "name": ", ".join([c.name for c in circuit]),
+        "name": name,
         "input": {
             "format": "ionq.circuit.v0",
             "gateset": backend.gateset(),
@@ -456,7 +541,8 @@ def qiskit_to_ionq(
 
     if multi_circuit:
         ionq_json["input"]["circuits"] = [
-            {"circuit": c, "registers": {"meas_mapped": m}} for c, m in ionq_circs
+            {"name": n, "circuit": c, "registers": {"meas_mapped": m}}
+            for c, m, n in ionq_circs
         ]
     else:
         ionq_json["input"]["circuit"] = ionq_circs
@@ -475,8 +561,9 @@ def qiskit_to_ionq(
     settings = passed_args.get("job_settings") or None
     if settings is not None:
         ionq_json["settings"] = settings
-
-    error_mitigation = passed_args.get("error_mitigation")
+    error_mitigation = passed_args.get("error_mitigation") or backend.options.get(
+        "error_mitigation"
+    )
     if error_mitigation and isinstance(error_mitigation, ErrorMitigation):
         ionq_json["error_mitigation"] = error_mitigation.value
 
@@ -528,10 +615,130 @@ class SafeEncoder(json.JSONEncoder):
         return "unknown"
 
 
+def resolve_credentials(token: str | None = None, url: str | None = None) -> dict:
+    """Resolve credentials for use in IonQ API calls.
+
+    If the provided ``token`` and ``url`` are both ``None``, then these values
+    are loaded from the ``IONQ_API_TOKEN`` and ``IONQ_API_URL``
+    environment variables, respectively.
+
+    If no url is discovered, then ``https://api.ionq.co/v0.3`` is used.
+
+    Args:
+        token (str): IonQ API access token.
+        url (str, optional): IonQ API url. Defaults to ``None``.
+
+    Returns:
+        dict[str]: A dict with "token" and "url" keys, for use by a client.
+    """
+    env_values = dotenv_values()
+    env_token = (
+        env_values.get("QISKIT_IONQ_API_TOKEN")
+        or env_values.get("IONQ_API_KEY")
+        or env_values.get("IONQ_API_TOKEN")
+        or os.getenv("QISKIT_IONQ_API_TOKEN")
+        or os.getenv("IONQ_API_KEY")
+        or os.getenv("IONQ_API_TOKEN")
+    )
+    env_url = (
+        env_values.get("QISKIT_IONQ_API_URL")
+        or env_values.get("IONQ_API_URL")
+        or os.getenv("QISKIT_IONQ_API_URL")
+        or os.getenv("IONQ_API_URL")
+    )
+    return {
+        "token": token or env_token,
+        "url": url or env_url or "https://api.ionq.co/v0.3",
+    }
+
+
+def get_n_qubits(backend: str, fallback: int = 100) -> int:
+    """Get the number of qubits for a given backend.
+
+    Args:
+        backend (str): The name of the backend.
+        fallback (int): Fallback number of qubits if API call fails.
+
+    Returns:
+        int: The number of qubits for the backend.
+    """
+    creds = resolve_credentials()
+    url = creds.get("url")
+
+    target = backend.split("ionq_")[-1] if backend.startswith("ionq_qpu.") else backend
+
+    try:
+        response = requests.get(url=f"{url}/backends", timeout=5)
+        response.raise_for_status()  # Ensure we catch any HTTP errors
+        return next(
+            (item["qubits"] for item in response.json() if item["backend"] == target),
+            fallback,
+        )  # Default to fallback if no backend found
+    except Exception as exception:  # pylint: disable=broad-except
+        warnings.warn(
+            f"Unable to get qubit count for {backend}: {exception}. Defaulting to {fallback}."
+        )
+        return fallback
+
+
+def retry(
+    exceptions: Any,
+    tries: int = -1,
+    delay: float = 0,
+    max_delay: float = float("inf"),
+    backoff: float = 1,
+    jitter: float = 0,
+    enable_logging: bool = True,
+):  # pylint: disable=too-many-positional-arguments
+    """Retry decorator with exponential backoff.
+
+    Args:
+        exceptions: The exception(s) to catch. Can be a tuple of exceptions.
+        tries: Number of attempts before giving up. -1 means infinite tries.
+        delay: Initial delay between retries in seconds.
+        max_delay: Maximum delay between retries.
+        backoff: Multiplier applied to delay after each retry.
+        jitter: Maximum random jitter added to delay.
+        enable_logging: Whether to log failures.
+    """
+
+    def deco_retry(func):
+        @functools.wraps(func)
+        def f_retry(*args, **kwargs):
+            _tries, _delay = tries, delay
+            while _tries != 0:
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as exception:
+                    _tries -= 1
+                    if _tries == 0:
+                        raise
+                    if enable_logging:
+                        warnings.warn(
+                            f"Retrying {func.__name__} "
+                            f"{f'{_tries} more time(s) ' if _tries > 0 else ''}"
+                            f"after {exception}"
+                        )
+                    sleep = _delay + (random.uniform(0, jitter) if jitter else 0)
+                    time.sleep(sleep)
+                    _delay *= backoff
+                    if _delay > max_delay:
+                        _delay = min(_delay, max_delay)
+
+            return None
+
+        return f_retry
+
+    return deco_retry
+
+
 __all__ = [
     "qiskit_to_ionq",
     "qiskit_circ_to_ionq_circ",
     "compress_to_metadata_string",
     "decompress_metadata_string",
     "get_user_agent",
+    "resolve_credentials",
+    "get_n_qubits",
+    "retry",
 ]
