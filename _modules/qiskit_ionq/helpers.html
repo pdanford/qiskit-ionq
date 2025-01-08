@@ -5,7 +5,7 @@
     <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
 
     <!-- Generated with Sphinx 7.4.7 and Furo 2024.01.29 -->
-        <title>qiskit_ionq.helpers - Qiskit IonQ Provider 0.5.2</title>
+        <title>qiskit_ionq.helpers - Qiskit IonQ Provider 0.5.11</title>
       <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=135e06be" />
     <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/qiskit-sphinx-theme.css?v=fe84956c" />
@@ -145,7 +145,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../index.html"><div class="brand">Qiskit IonQ Provider 0.5.2</div></a>
+      <a href="../../index.html"><div class="brand">Qiskit IonQ Provider 0.5.11</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -172,7 +172,7 @@
     </div>
   </a>
   
-  <span class="sidebar-brand-text">Qiskit IonQ Provider 0.5.2</span>
+  <span class="sidebar-brand-text">Qiskit IonQ Provider 0.5.11</span>
 </div><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
   <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
   <input type="hidden" name="check_keywords" value="yes">
@@ -262,20 +262,34 @@
 <span class="sd">to IonQ REST API compatible values.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">gzip</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dotenv</span><span class="w"> </span><span class="kn">import</span> <span class="n">dotenv_values</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit</span><span class="w"> </span><span class="kn">import</span> <span class="n">__version__</span> <span class="k">as</span> <span class="n">qiskit_terra_version</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.circuit</span><span class="w"> </span><span class="kn">import</span> <span class="n">controlledgate</span> <span class="k">as</span> <span class="n">q_cgates</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.circuit</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">controlledgate</span> <span class="k">as</span> <span class="n">q_cgates</span><span class="p">,</span>
+    <span class="n">QuantumCircuit</span><span class="p">,</span>
+    <span class="n">QuantumRegister</span><span class="p">,</span>
+    <span class="n">ClassicalRegister</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit.circuit.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">standard_gates</span> <span class="k">as</span> <span class="n">q_gates</span>
 
 <span class="c1"># Use this to get version instead of __version__ to avoid circular dependency.</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">importlib_metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">version</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">qiskit_ionq.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">ErrorMitigation</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">exceptions</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">exceptions</span> <span class="k">as</span> <span class="n">ionq_exceptions</span>
 
 <span class="c1"># the qiskit gates that the IonQ backend can serialize to our IR</span>
 <span class="c1"># not the actual hardware basis gates for the system — we do our own transpilation pass.</span>
@@ -322,6 +336,7 @@
     <span class="s2">&quot;x&quot;</span><span class="p">,</span>
     <span class="s2">&quot;y&quot;</span><span class="p">,</span>
     <span class="s2">&quot;z&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;PauliEvolution&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 
 <span class="n">ionq_api_aliases</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># todo fix alias bug</span>
@@ -333,6 +348,7 @@
     <span class="s2">&quot;mcx_gray&quot;</span><span class="p">:</span> <span class="s2">&quot;cx&quot;</span><span class="p">,</span>  <span class="c1"># just one C for all mcx</span>
     <span class="s2">&quot;tdg&quot;</span><span class="p">:</span> <span class="s2">&quot;ti&quot;</span><span class="p">,</span>
     <span class="s2">&quot;p&quot;</span><span class="p">:</span> <span class="s2">&quot;z&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;PauliEvolution&quot;</span><span class="p">:</span> <span class="s2">&quot;pauliexp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;rxx&quot;</span><span class="p">:</span> <span class="s2">&quot;xx&quot;</span><span class="p">,</span>
     <span class="s2">&quot;ryy&quot;</span><span class="p">:</span> <span class="s2">&quot;yy&quot;</span><span class="p">,</span>
     <span class="s2">&quot;rzz&quot;</span><span class="p">:</span> <span class="s2">&quot;zz&quot;</span><span class="p">,</span>
@@ -365,7 +381,11 @@
 
 <div class="viewcode-block" id="qiskit_circ_to_ionq_circ">
 <a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.qiskit_circ_to_ionq_circ">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">qiskit_circ_to_ionq_circ</span><span class="p">(</span><span class="n">input_circuit</span><span class="p">,</span> <span class="n">gateset</span><span class="o">=</span><span class="s2">&quot;qis&quot;</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">qiskit_circ_to_ionq_circ</span><span class="p">(</span>
+    <span class="n">input_circuit</span><span class="p">:</span> <span class="n">QuantumCircuit</span><span class="p">,</span>
+    <span class="n">gateset</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;qis&quot;</span><span class="p">,</span> <span class="s2">&quot;native&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;qis&quot;</span><span class="p">,</span>
+    <span class="n">ionq_compiler_synthesis</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a circuit in IonQ&#39;s instruction format from qiskit instructions.</span>
 
 <span class="sd">    .. ATTENTION:: This function ignores the following compiler directives:</span>
@@ -376,10 +396,14 @@
 <span class="sd">        gateset (string): Set of gates to target. It can be QIS (required transpilation pass in</span>
 <span class="sd">          IonQ backend, which is sent standard gates) or native (only IonQ native gates are</span>
 <span class="sd">          allowed, in the future we may provide transpilation to these gates in Qiskit).</span>
+<span class="sd">        ionq_compiler_synthesis (bool): Whether to opt-in to IonQ compiler&#39;s intelligent</span>
+<span class="sd">          trotterization.</span>
 
 <span class="sd">    Raises:</span>
 <span class="sd">        IonQGateError: If an unsupported instruction is supplied.</span>
 <span class="sd">        IonQMidCircuitMeasurementError: If a mid-circuit measurement is detected.</span>
+<span class="sd">        IonQPauliExponentialError: If non-commuting PauliExponentials are found without</span>
+<span class="sd">          the appropriate flag.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        list[dict]: A list of instructions in a converted dict format.</span>
@@ -410,10 +434,10 @@
 
         <span class="c1"># Raise out for instructions we don&#39;t support.</span>
         <span class="k">if</span> <span class="n">instruction_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">GATESET_MAP</span><span class="p">[</span><span class="n">gateset</span><span class="p">]:</span>
-            <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">IonQGateError</span><span class="p">(</span><span class="n">instruction_name</span><span class="p">,</span> <span class="n">gateset</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">ionq_exceptions</span><span class="o">.</span><span class="n">IonQGateError</span><span class="p">(</span><span class="n">instruction_name</span><span class="p">,</span> <span class="n">gateset</span><span class="p">)</span>
 
         <span class="c1"># Process the instruction and convert.</span>
-        <span class="n">rotation</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">rotation</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">instruction</span><span class="o">.</span><span class="n">params</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">gateset</span> <span class="o">==</span> <span class="s2">&quot;qis&quot;</span> <span class="ow">or</span> <span class="p">(</span>
                 <span class="nb">len</span><span class="p">(</span><span class="n">instruction</span><span class="o">.</span><span class="n">params</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">instruction_name</span> <span class="o">!=</span> <span class="s2">&quot;zz&quot;</span>
@@ -424,6 +448,9 @@
                         <span class="n">instruction</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                     <span class="p">)</span>
                 <span class="p">}</span>
+                <span class="k">if</span> <span class="n">instruction_name</span> <span class="o">==</span> <span class="s2">&quot;PauliEvolution&quot;</span><span class="p">:</span>
+                    <span class="c1"># rename rotation to time</span>
+                    <span class="n">rotation</span><span class="p">[</span><span class="s2">&quot;time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rotation</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;rotation&quot;</span><span class="p">)</span>
             <span class="k">elif</span> <span class="n">instruction_name</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;zz&quot;</span><span class="p">}:</span>
                 <span class="n">rotation</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;angle&quot;</span><span class="p">:</span> <span class="n">instruction</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="mi">0</span><span class="p">]}</span>
             <span class="k">else</span><span class="p">:</span>
@@ -488,6 +515,32 @@
                 <span class="p">}</span>
             <span class="p">)</span>
 
+        <span class="k">if</span> <span class="n">instruction_name</span> <span class="o">==</span> <span class="s2">&quot;pauliexp&quot;</span><span class="p">:</span>
+            <span class="n">imag_coeff</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">coeff</span><span class="o">.</span><span class="n">imag</span> <span class="k">for</span> <span class="n">coeff</span> <span class="ow">in</span> <span class="n">instruction</span><span class="o">.</span><span class="n">operator</span><span class="o">.</span><span class="n">coeffs</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="ow">not</span> <span class="n">imag_coeff</span><span class="p">,</span> <span class="p">(</span>
+                <span class="s2">&quot;PauliEvolution gate must have real coefficients, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">imag_coeff</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="n">terms</span> <span class="o">=</span> <span class="p">[</span><span class="n">term</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">instruction</span><span class="o">.</span><span class="n">operator</span><span class="o">.</span><span class="n">to_list</span><span class="p">()]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">ionq_compiler_synthesis</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">paulis_commute</span><span class="p">(</span><span class="n">terms</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">ionq_exceptions</span><span class="o">.</span><span class="n">IonQPauliExponentialError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;You have included a PauliEvolutionGate with non-commuting terms: </span><span class="si">{</span><span class="n">terms</span><span class="si">}</span><span class="s2">.&quot;</span>
+                    <span class="s2">&quot;To decompose it with IonQ hardware-aware synthesis, resubmit with the &quot;</span>
+                    <span class="s2">&quot;IONQ_COMPILER_SYNTHESIS flag.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">targets</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">input_circuit</span><span class="o">.</span><span class="n">qubits</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">qargs</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">instruction</span><span class="o">.</span><span class="n">num_qubits</span><span class="p">)</span>
+            <span class="p">]</span>
+            <span class="n">coefficients</span> <span class="o">=</span> <span class="p">[</span><span class="n">coeff</span><span class="o">.</span><span class="n">real</span> <span class="k">for</span> <span class="n">coeff</span> <span class="ow">in</span> <span class="n">instruction</span><span class="o">.</span><span class="n">operator</span><span class="o">.</span><span class="n">coeffs</span><span class="p">]</span>
+            <span class="n">gate</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;gate&quot;</span><span class="p">:</span> <span class="n">instruction_name</span><span class="p">,</span>
+                <span class="s2">&quot;targets&quot;</span><span class="p">:</span> <span class="n">targets</span><span class="p">,</span>
+                <span class="s2">&quot;terms&quot;</span><span class="p">:</span> <span class="n">terms</span><span class="p">,</span>
+                <span class="s2">&quot;coefficients&quot;</span><span class="p">:</span> <span class="n">coefficients</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="n">converted</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">gate</span><span class="p">)</span>
+
         <span class="c1"># if there&#39;s a valid instruction after a measurement,</span>
         <span class="k">if</span> <span class="n">num_meas</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="c1"># see if any of the involved qubits have been measured,</span>
@@ -496,7 +549,7 @@
                 <span class="s2">&quot;controls&quot;</span><span class="p">,</span> <span class="p">[]</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">i</span> <span class="ow">in</span> <span class="n">meas_map</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">controls_and_targets</span><span class="p">):</span>
-                <span class="k">raise</span> <span class="n">exceptions</span><span class="o">.</span><span class="n">IonQMidCircuitMeasurementError</span><span class="p">(</span>
+                <span class="k">raise</span> <span class="n">ionq_exceptions</span><span class="o">.</span><span class="n">IonQMidCircuitMeasurementError</span><span class="p">(</span>
                     <span class="n">input_circuit</span><span class="o">.</span><span class="n">qubits</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">qargs</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">instruction_name</span>
                 <span class="p">)</span>
 
@@ -506,7 +559,32 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">get_register_sizes_and_labels</span><span class="p">(</span><span class="n">registers</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">paulis_commute</span><span class="p">(</span><span class="n">pauli_terms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if a list of Pauli terms commute.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        pauli_terms (list): A list of Pauli terms.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        bool: Whether the Pauli terms commute.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pauli_terms</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">other_term</span> <span class="ow">in</span> <span class="n">pauli_terms</span><span class="p">[</span><span class="n">i</span><span class="p">:]:</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">term</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">other_term</span><span class="p">)</span>
+            <span class="n">anticommutation_parity</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">char</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">term</span><span class="p">):</span>
+                <span class="n">other_char</span> <span class="o">=</span> <span class="n">other_term</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+                <span class="k">if</span> <span class="s2">&quot;I&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">char</span><span class="p">,</span> <span class="n">other_char</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="n">char</span> <span class="o">!=</span> <span class="n">other_char</span><span class="p">:</span>
+                        <span class="n">anticommutation_parity</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">anticommutation_parity</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_register_sizes_and_labels</span><span class="p">(</span>
+    <span class="n">registers</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QuantumRegister</span> <span class="o">|</span> <span class="n">ClassicalRegister</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">,</span> <span class="nb">list</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a tuple of sizes and labels in for a given register</span>
 
 <span class="sd">    Args:</span>
@@ -534,7 +612,9 @@
 
 <div class="viewcode-block" id="compress_to_metadata_string">
 <a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.compress_to_metadata_string">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">compress_to_metadata_string</span><span class="p">(</span><span class="n">metadata</span><span class="p">):</span>  <span class="c1"># pylint: disable=invalid-name</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compress_to_metadata_string</span><span class="p">(</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="nb">list</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>  <span class="c1"># pylint: disable=invalid-name</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Convert a metadata object to a compact string format (dumped, gzipped, base64 encoded)</span>
 <span class="sd">    for storing in IonQ API metadata</span>
@@ -556,7 +636,9 @@
 
 <div class="viewcode-block" id="decompress_metadata_string">
 <a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.decompress_metadata_string">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">decompress_metadata_string</span><span class="p">(</span><span class="n">input_string</span><span class="p">):</span>  <span class="c1"># pylint: disable=invalid-name</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">decompress_metadata_string</span><span class="p">(</span>
+    <span class="n">input_string</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="nb">list</span><span class="p">:</span>  <span class="c1"># pylint: disable=invalid-name</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Convert compact string format (dumped, gzipped, base64 encoded) from</span>
 <span class="sd">    IonQ API metadata back into a dict or list of dicts relevant to building</span>
@@ -581,7 +663,7 @@
 <a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.qiskit_to_ionq">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">qiskit_to_ionq</span><span class="p">(</span>
     <span class="n">circuit</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">passed_args</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_query_params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_metadata</span><span class="o">=</span><span class="kc">None</span>
-<span class="p">):</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert a Qiskit circuit to a IonQ compatible dict.</span>
 
 <span class="sd">    Parameters:</span>
@@ -602,12 +684,20 @@
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
         <span class="n">multi_circuit</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">for</span> <span class="n">circ</span> <span class="ow">in</span> <span class="n">circuit</span><span class="p">:</span>
-            <span class="n">ionq_circ</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">meas_map</span> <span class="o">=</span> <span class="n">qiskit_circ_to_ionq_circ</span><span class="p">(</span><span class="n">circ</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">gateset</span><span class="p">())</span>
-            <span class="n">ionq_circs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ionq_circ</span><span class="p">,</span> <span class="n">meas_map</span><span class="p">))</span>
+            <span class="n">ionq_circ</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">meas_map</span> <span class="o">=</span> <span class="n">qiskit_circ_to_ionq_circ</span><span class="p">(</span>
+                <span class="n">circ</span><span class="p">,</span>
+                <span class="n">backend</span><span class="o">.</span><span class="n">gateset</span><span class="p">(),</span>
+                <span class="n">extra_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ionq_compiler_synthesis&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">ionq_circs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ionq_circ</span><span class="p">,</span> <span class="n">meas_map</span><span class="p">,</span> <span class="n">circ</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">ionq_circs</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">meas_map</span> <span class="o">=</span> <span class="n">qiskit_circ_to_ionq_circ</span><span class="p">(</span><span class="n">circuit</span><span class="p">,</span> <span class="n">backend</span><span class="o">.</span><span class="n">gateset</span><span class="p">())</span>
+        <span class="n">ionq_circs</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">meas_map</span> <span class="o">=</span> <span class="n">qiskit_circ_to_ionq_circ</span><span class="p">(</span>
+            <span class="n">circuit</span><span class="p">,</span>
+            <span class="n">backend</span><span class="o">.</span><span class="n">gateset</span><span class="p">(),</span>
+            <span class="n">extra_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ionq_compiler_synthesis&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="p">)</span>
         <span class="n">circuit</span> <span class="o">=</span> <span class="p">[</span><span class="n">circuit</span><span class="p">]</span>
-
+    <span class="n">circuit</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">QuantumCircuit</span><span class="p">]</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">QuantumCircuit</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>  <span class="c1"># type: ignore[no-redef]</span>
     <span class="n">metadata_list</span> <span class="o">=</span> <span class="p">[</span>
         <span class="p">{</span>
             <span class="s2">&quot;memory_slots&quot;</span><span class="p">:</span> <span class="n">circ</span><span class="o">.</span><span class="n">num_clbits</span><span class="p">,</span>  <span class="c1"># int</span>
@@ -633,17 +723,13 @@
     <span class="p">)</span>
 
     <span class="n">target</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">name</span><span class="p">()[</span><span class="mi">5</span><span class="p">:]</span> <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">name</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;ionq&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">backend</span><span class="o">.</span><span class="n">name</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">target</span> <span class="o">==</span> <span class="s2">&quot;qpu&quot;</span><span class="p">:</span>
-        <span class="n">target</span> <span class="o">=</span> <span class="s2">&quot;qpu.harmony&quot;</span>  <span class="c1"># todo default to cheapest available option</span>
-        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-            <span class="s2">&quot;The ionq_qpu backend is deprecated. Defaulting to ionq_qpu.harmony.&quot;</span><span class="p">,</span>
-            <span class="ne">DeprecationWarning</span><span class="p">,</span>
-            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
-        <span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">passed_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span><span class="si">}</span><span class="s2"> circuits&quot;</span> <span class="k">if</span> <span class="n">multi_circuit</span> <span class="k">else</span> <span class="n">circuit</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span>
+    <span class="p">)</span>
     <span class="n">ionq_json</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;target&quot;</span><span class="p">:</span> <span class="n">target</span><span class="p">,</span>
         <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">passed_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;shots&quot;</span><span class="p">),</span>
-        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">c</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">circuit</span><span class="p">]),</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">name</span><span class="p">,</span>
         <span class="s2">&quot;input&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;format&quot;</span><span class="p">:</span> <span class="s2">&quot;ionq.circuit.v0&quot;</span><span class="p">,</span>
             <span class="s2">&quot;gateset&quot;</span><span class="p">:</span> <span class="n">backend</span><span class="o">.</span><span class="n">gateset</span><span class="p">(),</span>
@@ -658,7 +744,8 @@
     <span class="p">}</span>
     <span class="k">if</span> <span class="n">multi_circuit</span><span class="p">:</span>
         <span class="n">ionq_json</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][</span><span class="s2">&quot;circuits&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="p">{</span><span class="s2">&quot;circuit&quot;</span><span class="p">:</span> <span class="n">c</span><span class="p">,</span> <span class="s2">&quot;registers&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;meas_mapped&quot;</span><span class="p">:</span> <span class="n">m</span><span class="p">}}</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">ionq_circs</span>
+            <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">n</span><span class="p">,</span> <span class="s2">&quot;circuit&quot;</span><span class="p">:</span> <span class="n">c</span><span class="p">,</span> <span class="s2">&quot;registers&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;meas_mapped&quot;</span><span class="p">:</span> <span class="n">m</span><span class="p">}}</span>
+            <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">ionq_circs</span>
         <span class="p">]</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">ionq_json</span><span class="p">[</span><span class="s2">&quot;input&quot;</span><span class="p">][</span><span class="s2">&quot;circuit&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">ionq_circs</span>
@@ -674,7 +761,9 @@
     <span class="n">settings</span> <span class="o">=</span> <span class="n">passed_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;job_settings&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
     <span class="k">if</span> <span class="n">settings</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">ionq_json</span><span class="p">[</span><span class="s2">&quot;settings&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">settings</span>
-    <span class="n">error_mitigation</span> <span class="o">=</span> <span class="n">passed_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;error_mitigation&quot;</span><span class="p">)</span>
+    <span class="n">error_mitigation</span> <span class="o">=</span> <span class="n">passed_args</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;error_mitigation&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">backend</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s2">&quot;error_mitigation&quot;</span>
+    <span class="p">)</span>
     <span class="k">if</span> <span class="n">error_mitigation</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">error_mitigation</span><span class="p">,</span> <span class="n">ErrorMitigation</span><span class="p">):</span>
         <span class="n">ionq_json</span><span class="p">[</span><span class="s2">&quot;error_mitigation&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">error_mitigation</span><span class="o">.</span><span class="n">value</span>
     <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">ionq_json</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="n">SafeEncoder</span><span class="p">)</span></div>
@@ -729,12 +818,141 @@
         <span class="k">return</span> <span class="s2">&quot;unknown&quot;</span>
 
 
+<div class="viewcode-block" id="resolve_credentials">
+<a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.resolve_credentials">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_credentials</span><span class="p">(</span><span class="n">token</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve credentials for use in IonQ API calls.</span>
+
+<span class="sd">    If the provided ``token`` and ``url`` are both ``None``, then these values</span>
+<span class="sd">    are loaded from the ``IONQ_API_TOKEN`` and ``IONQ_API_URL``</span>
+<span class="sd">    environment variables, respectively.</span>
+
+<span class="sd">    If no url is discovered, then ``https://api.ionq.co/v0.3`` is used.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        token (str): IonQ API access token.</span>
+<span class="sd">        url (str, optional): IonQ API url. Defaults to ``None``.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        dict[str]: A dict with &quot;token&quot; and &quot;url&quot; keys, for use by a client.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env_values</span> <span class="o">=</span> <span class="n">dotenv_values</span><span class="p">()</span>
+    <span class="n">env_token</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">env_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;QISKIT_IONQ_API_TOKEN&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">env_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IONQ_API_KEY&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">env_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IONQ_API_TOKEN&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;QISKIT_IONQ_API_TOKEN&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;IONQ_API_KEY&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;IONQ_API_TOKEN&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">env_url</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">env_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;QISKIT_IONQ_API_URL&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">env_values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;IONQ_API_URL&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;QISKIT_IONQ_API_URL&quot;</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;IONQ_API_URL&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;token&quot;</span><span class="p">:</span> <span class="n">token</span> <span class="ow">or</span> <span class="n">env_token</span><span class="p">,</span>
+        <span class="s2">&quot;url&quot;</span><span class="p">:</span> <span class="n">url</span> <span class="ow">or</span> <span class="n">env_url</span> <span class="ow">or</span> <span class="s2">&quot;https://api.ionq.co/v0.3&quot;</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="get_n_qubits">
+<a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.get_n_qubits">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_n_qubits</span><span class="p">(</span><span class="n">backend</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">fallback</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the number of qubits for a given backend.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        backend (str): The name of the backend.</span>
+<span class="sd">        fallback (int): Fallback number of qubits if API call fails.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        int: The number of qubits for the backend.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">creds</span> <span class="o">=</span> <span class="n">resolve_credentials</span><span class="p">()</span>
+    <span class="n">url</span> <span class="o">=</span> <span class="n">creds</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;url&quot;</span><span class="p">)</span>
+
+    <span class="n">target</span> <span class="o">=</span> <span class="n">backend</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;ionq_&quot;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">backend</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;ionq_qpu.&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="n">backend</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">url</span><span class="si">}</span><span class="s2">/backends&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>  <span class="c1"># Ensure we catch any HTTP errors</span>
+        <span class="k">return</span> <span class="nb">next</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s2">&quot;qubits&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span> <span class="k">if</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;backend&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">target</span><span class="p">),</span>
+            <span class="n">fallback</span><span class="p">,</span>
+        <span class="p">)</span>  <span class="c1"># Default to fallback if no backend found</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exception</span><span class="p">:</span>  <span class="c1"># pylint: disable=broad-except</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Unable to get qubit count for </span><span class="si">{</span><span class="n">backend</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exception</span><span class="si">}</span><span class="s2">. Defaulting to </span><span class="si">{</span><span class="n">fallback</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">fallback</span></div>
+
+
+
+<div class="viewcode-block" id="retry">
+<a class="viewcode-back" href="../../apidocs/helpers.html#qiskit_ionq.helpers.retry">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">retry</span><span class="p">(</span>
+    <span class="n">exceptions</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">tries</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">delay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">max_delay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">),</span>
+    <span class="n">backoff</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">jitter</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">enable_logging</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">):</span>  <span class="c1"># pylint: disable=too-many-positional-arguments</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Retry decorator with exponential backoff.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        exceptions: The exception(s) to catch. Can be a tuple of exceptions.</span>
+<span class="sd">        tries: Number of attempts before giving up. -1 means infinite tries.</span>
+<span class="sd">        delay: Initial delay between retries in seconds.</span>
+<span class="sd">        max_delay: Maximum delay between retries.</span>
+<span class="sd">        backoff: Multiplier applied to delay after each retry.</span>
+<span class="sd">        jitter: Maximum random jitter added to delay.</span>
+<span class="sd">        enable_logging: Whether to log failures.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">deco_retry</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+        <span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">f_retry</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+            <span class="n">_tries</span><span class="p">,</span> <span class="n">_delay</span> <span class="o">=</span> <span class="n">tries</span><span class="p">,</span> <span class="n">delay</span>
+            <span class="k">while</span> <span class="n">_tries</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">exceptions</span> <span class="k">as</span> <span class="n">exception</span><span class="p">:</span>
+                    <span class="n">_tries</span> <span class="o">-=</span> <span class="mi">1</span>
+                    <span class="k">if</span> <span class="n">_tries</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="k">raise</span>
+                    <span class="k">if</span> <span class="n">enable_logging</span><span class="p">:</span>
+                        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;Retrying </span><span class="si">{</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">_tries</span><span class="si">}</span><span class="s1"> more time(s) &#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">_tries</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="si">}</span><span class="s2">&quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;after </span><span class="si">{</span><span class="n">exception</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="p">)</span>
+                    <span class="n">sleep</span> <span class="o">=</span> <span class="n">_delay</span> <span class="o">+</span> <span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">jitter</span><span class="p">)</span> <span class="k">if</span> <span class="n">jitter</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="p">)</span>
+                    <span class="n">_delay</span> <span class="o">*=</span> <span class="n">backoff</span>
+                    <span class="k">if</span> <span class="n">_delay</span> <span class="o">&gt;</span> <span class="n">max_delay</span><span class="p">:</span>
+                        <span class="n">_delay</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">_delay</span><span class="p">,</span> <span class="n">max_delay</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">f_retry</span>
+
+    <span class="k">return</span> <span class="n">deco_retry</span></div>
+
+
+
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;qiskit_to_ionq&quot;</span><span class="p">,</span>
     <span class="s2">&quot;qiskit_circ_to_ionq_circ&quot;</span><span class="p">,</span>
     <span class="s2">&quot;compress_to_metadata_string&quot;</span><span class="p">,</span>
     <span class="s2">&quot;decompress_metadata_string&quot;</span><span class="p">,</span>
     <span class="s2">&quot;get_user_agent&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;resolve_credentials&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;get_n_qubits&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;retry&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </pre></div>
         </article>
@@ -769,7 +987,7 @@
   </div>
 </div><script src="../../_static/jquery.js?v=5d32c60e"></script>
     <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-    <script src="../../_static/documentation_options.js?v=8e576371"></script>
+    <script src="../../_static/documentation_options.js?v=559aaa41"></script>
     <script src="../../_static/doctools.js?v=9a2dae69"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/thebelab-helper.js"></script>
