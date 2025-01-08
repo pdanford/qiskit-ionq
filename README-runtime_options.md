@@ -19,8 +19,9 @@ This is an example Qiskit python script that shows how to attach runtime options
 #     0. git clone https://github.com/pdanford/qiskit-ionq.git
 #     1. cd qiskit-ionq
 #     2. git checkout custom-features
-#     3. python -m venv _env_qiskit && source _env_qiskit/bin/activate
-#     4. pip install -e .   # to install this custom qiskit-ionq package
+#     3. python -m venv _env_qiskit
+#     4. source _env_qiskit/bin/activate
+#     5. pip install -e .   # to install this custom qiskit-ionq package
 #
 # Running:
 #     0. cd qiskit-ionq
