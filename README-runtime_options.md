@@ -137,7 +137,7 @@ The `custom_pulse_shapes` is a payload with the following schema [JSON Schema](h
             "patternProperties": {
                 "^\\(\\d+,\\d+\\)$": {
                     "type": "object",
-                    "description": "The key specifies a pair of qubits, e.g. '(0,1)', '(3,21)' etc. The object specifies pulse shape details used for 2Q gates on that pair. Multiple pairs allowed.",
+                    "description": "The key specifies a pair of qubits, e.g. '(0,1)', '(3,21)' etc. The object specifies pulse shape details used for any 2Q gates on that pair. Multiple pairs allowed.",
                     "properties": {
                         "amplitudes": {
                             "type": "array",
@@ -183,6 +183,10 @@ The `custom_pulse_shapes` is a payload with the following schema [JSON Schema](h
                                 { "type": "number" }
                             ],
                             "description": "Sets gate detuning by weighted sum of the nearest two motional modes. This field sets the weights. `mu = (relDet[0]*lower + relDet[1]*upper) / sum(relDet)`. Gate sidebands will be at frequencies `carrier + shift - mu`, and `carrier + shift + mu`, where `shift = detuningShift` and `carrier` is set by the system."
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "(Optional) Non-functional field for user annotations"
                         }
                     },
                     "required": [
@@ -206,34 +210,37 @@ The `custom_pulse_shapes` is a payload with the following schema [JSON Schema](h
 
 
 #### Example 
+Below is the payload snippet to add to runtime_options. In this example, all MS gates on qubits (0,2) and (2,5) will use custom pulse shapes. Any other pairs will use system builtin pulse shapes.
 ```json
-"custom_pulse_shapes": {
-    "schema": "am-v4",
-    "iteration": 0,
-    "seed_source": "reference-file.json",
-    "(0,2)": {
-        "amplitudes": [0,1,5,4,3,2,1,0],
-        "durationUsec": 40.0,
-        "scale": 1.0,
-        "rampDuration": 2.0,
-        "nearestModesIdx": [4,5],
-        "relDet": [1,0]
-    },
-    "(2,5)": {
-        "amplitudes": [0,1,2,-2,-1,0],
-        "durationUsec": 30.0,
-        "scale": 1.0,
-        "rampDuration": 3.0,
-        "nearestModesIdx": [4,5],
-        "relDet": [1,0]
+{
+    "custom_pulse_shapes": {
+        "schema": "am-v4",
+        "iteration": 0,
+        "seed_source": "reference-file.json",
+        "(0,2)": {
+            "amplitudes": [0,1,5,4,3,2,1,0],
+            "durationUsec": 40.0,
+            "scale": 1.0,
+            "rampDuration": 2.0,
+            "nearestModesIdx": [4,5],
+            "relDet": [1,0]
+        },
+        "(2,5)": {
+            "amplitudes": [0,1,2,-2,-1,0],
+            "durationUsec": 30.0,
+            "scale": 1.0,
+            "rampDuration": 3.0,
+            "nearestModesIdx": [4,5],
+            "relDet": [1,0]
+        }
     }
 }
 
 ```
-Pair (0,2)
+Pair (0,2):
 
 ![docs/assets/custom_pulse_example_0-2.png](docs/assets/custom_pulse_example_0-2.png)
 
-Pair (2,5)
+Pair (2,5):
 
 ![docs/assets/custom_pulse_example_2-5.png](docs/assets/custom_pulse_example_2-5.png)
