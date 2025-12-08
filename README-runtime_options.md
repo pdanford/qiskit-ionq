@@ -150,10 +150,6 @@ The `custom_pulse_shapes` is a payload with the following schema [JSON Schema](h
                             "type": "number",
                             "description": "The total duration of the pulse in microseconds."
                         },
-                        "rampDurationUsec": {
-                            "type": "number",
-                            "description": "(Optional) perform a cubic spline ramp between each amplitude. This is a low-pass filter that preserves pulse area. Must be <= durationUsec / len(amplitudes). Default = 0 (no ramp)."
-                        },
                         "scale": {
                             "type": "number",
                             "minimum": 0.0,
@@ -221,7 +217,6 @@ Below is the payload snippet to add to runtime_options. In this example, all MS 
             "amplitudes": [0,1,5,4,3,2,1,0],
             "durationUsec": 40.0,
             "scale": 1.0,
-            "rampDuration": 2.0,
             "nearestModesIdx": [4,5],
             "relDet": [1,0]
         },
@@ -229,7 +224,6 @@ Below is the payload snippet to add to runtime_options. In this example, all MS 
             "amplitudes": [0,1,2,-2,-1,0],
             "durationUsec": 30.0,
             "scale": 1.0,
-            "rampDuration": 3.0,
             "nearestModesIdx": [4,5],
             "relDet": [1,0]
         }
