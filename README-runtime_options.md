@@ -111,3 +111,55 @@ job = qpu.run(qc_example_native_gates(),
 ```
 
 **Note:** To disable the usage of logical qubits and refer to the physical qubits for the gates, the `error_mitigation=ErrorMitigation.NO_DEBIASING` option must be used in the above `run` parameters. For more, see https://docs.ionq.com/sdks/qiskit/error-mitigation-qiskit#specifying-the-debiasing-settings
+
+
+The `custom_pulse_shapes` is a json payload with the following definition. A [JSON Schema](https://json-schema.org) with this information is available in the repo at `docs/apidocs/custom_pulse-am-v4.json`.
+
+| Field | | Type | Required | Description |
+|-------|---|------|----------|-------------|
+| `schema` | | string | Yes | The schema version of the custom pulse shapes payload. Currently, only 'am-v4' is supported. (enum: ["am-v4"] ) |
+| `iteration` | | integer | Yes | An integer representing the iteration of the custom pulse shapes. This can be used to track iterations on the pulse shapes or `scale` calibration. |
+| `seed_source` | | string | Yes | A string identifying the source or origin of the pulse shape data. Non-functional. For traceability purposes. |
+| `(i,j)` | | object | At least one pair required | The key specifies a pair of qubits, e.g. '(0,1)', '(3,21)' etc. The object specifies pulse shape details used for any 2Q gates on that pair. Multiple pairs allowed. Properties described below. |
+| | `amplitudes` | array of numbers | Yes | An array of amplitudes that define the pulse envelope, in arbitrary units. Values should typically be >= 0 but can go negative to represent multiplication by pi phase. Each value is held for time durationUsec / len(amplitudes). |
+| | `durationUsec` | number | Yes | The total duration of the pulse in microseconds. |
+| | `scale` | number (0.0-1.0) | Yes | A scaling factor from 0.0 to 1.0 for the pulse ampliPtudes. This value needs to be calibrated to achieve the intended MS gate angle. |
+| | `nearestModesIdx` | array of 2 integers | Yes | The indices of lower and upper modes in modeFreqHz. |
+| | `relDet` | array of 2 numbers | Yes | Sets gate detuning by weighted sum of the nearest two motional modes. This field sets the weights. `mu = (relDet[0]*lower + relDet[1]*upper) / sum(relDet)`. Gate sidebands will be at frequencies `carrier + shift - mu`, and `carrier + shift + mu`, where `shift = detuningShift` and `carrier` is set by the system. |
+| | `detuningShift` | number | No | (MHz, Optional) common (carrier) frequency shift. Shifts sidebands in the same direction. Default = 0 |
+| | `tag` | string | No | (Optional) Non-functional field for user annotations |
+
+
+#### Example 
+Below is the payload snippet to add to runtime_options. In this example, all MS gates on qubits (0,2) and (2,5) will use custom pulse shapes. Any other pairs will use system builtin pulse shapes.
+```json
+{
+    "custom_pulse_shapes": {
+        "schema": "am-v4",
+        "iteration": 0,
+        "seed_source": "reference-file.json",
+        "(0,2)": {
+            "amplitudes": [0,1,5,4,3,2,1,0],
+            "durationUsec": 40.0,
+            "scale": 1.0,
+            "nearestModesIdx": [4,5],
+            "relDet": [1,0]
+        },
+        "(2,5)": {
+            "amplitudes": [0,1,2,-2,-1,0],
+            "durationUsec": 30.0,
+            "scale": 1.0,
+            "nearestModesIdx": [4,5],
+            "relDet": [1,0]
+        }
+    }
+}
+
+```
+Pair (0,2):
+
+![docs/assets/custom_pulse_example_0-2.png](docs/assets/custom_pulse_example_0-2.png)
+
+Pair (2,5):
+
+![docs/assets/custom_pulse_example_2-5.png](docs/assets/custom_pulse_example_2-5.png)
